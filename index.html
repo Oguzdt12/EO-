@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Oğuzun Ejderha Oyunu - Pro Edition</title>
+<style>
+    :root { --fire: #ff4500; --gold: #ffd700; --energy: #00f2ff; }
+    body { margin:0; background:#000; overflow:hidden; touch-action:none; user-select:none; font-family: 'Arial Black', sans-serif; }
+    canvas { display:block; background:#000; }
+    
+    .ui { position:absolute; top:15px; width:100%; display:flex; justify-content:space-around; z-index:100; pointer-events:none; }
+    .ui-box { background: rgba(0,0,0,0.85); padding:10px 20px; border-radius:12px; border:2px solid var(--gold); color:var(--gold); font-size:18px; box-shadow: 0 0 10px rgba(255,215,0,0.2); }
+
+    .controls { position:fixed; bottom:25px; left:0; width:100%; display:flex; justify-content:center; gap:12px; z-index:9999; }
+    .btn { width:72px; height:72px; background:rgba(30,30,30,0.9); border:3px solid var(--fire); border-radius:20px; color:white; font-size:28px; display:flex; align-items:center; justify-content:center; touch-action:none; -webkit-tap-highlight-color: transparent; box-shadow: 0 4px 0 #500; }
+    .btn:active { background: var(--fire); transform: translateY(4px); box-shadow: none; }
+
+    #overlay, #shop-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:10000; background:rgba(0,0,0,0.95); display:none; flex-direction:column; align-items:center; justify-content:center; }
+    .card { background:#111; padding:30px; border:3px solid var(--gold); border-radius:25px; text-align:center; color:white; max-width: 85%; box-shadow: 0 0 30px rgba(255,215,0,0.1); }
+    .btn-main { padding:12px 30px; background:var(--gold); border:none; border-radius:10px; color:#000; font-weight:bold; font-size:16px; cursor:pointer; margin:10px; }
+    
+    .color-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+    .color-btn { width: 100%; padding: 15px 5px; border-radius: 8px; border: 2px solid #333; color: white; font-weight: bold; font-size: 11px; cursor: pointer; text-shadow: 1px 1px 2px #000; }
+</style>
+</head>
+<body>
+
+<div class="ui">
+    <div class="ui-box">💰 <span id="goldCount">0</span></div>
+    <div class="ui-box">📊 <span id="scoreCount">0</span>/1000</div>
+</div>
+
+<div id="overlay">
+    <div class="card">
+        <h1 id="statusTitle" style="color:var(--fire); margin:0;">EJDERHA SAVAŞI</h1>
+        <p id="statusDesc">Oğuz'un efsanesine hazır mısın?</p>
+        <button class="btn-main" onclick="resetGame()">BAŞLA</button>
+        <button class="btn-main" style="background: #444; color: white;" onclick="openShop()">MAĞAZA</button>
+    </div>
+</div>
+
+<div id="shop-overlay">
+    <div class="card">
+        <h2 style="color:var(--gold); margin:0;">KOSTÜM MAĞAZASI</h2>
+        <p>Her Renk 200 Altın</p>
+        <div class="color-grid" id="colorGrid"></div>
+        <button class="btn-main" style="margin-top:20px; background:#666; color:white;" onclick="closeShop()">GERİ</button>
+    </div>
+</div>
+
+<canvas id="game"></canvas>
+
+<div class="controls">
+    <div class="btn" id="l">⬅️</div>
+    <div class="btn" id="d">⬇️</div>
+    <div class="btn" id="u">⬆️</div>
+    <div class="btn" id="r">➡️</div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let dragon, balls = [], playing = false, gold = 0, score = 0, speed = 4.5;
+let dragonColor = "#810";
+const keys = { left: false, right: false, up: false, down: false };
+
+const colors = [
+    { n: "Mavi", c: "#0000FF" }, { n: "Yeşil", c: "#008000" }, { n: "Siyah", c: "#222" },
+    { n: "Beyaz", c: "#FFF" }, { n: "Pembe", c: "#FF69B4" }, { n: "Gri", c: "#808080" },
+    { n: "Kahve", c: "#5D4037" }, { n: "Sarı", c: "#FFD600" }, { n: "Mor", c: "#9C27B0" },
+    { n: "Turuncu", c: "#FF9800" }
+];
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(f, t='square', d=0.1) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.05, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + d);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
+}
+
+function drawEnergyBall(b) {
+    ctx.save();
+    // Dış Parlama
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "rgba(0, 242, 255, 0.8)";
+    
+    // Gradyan Dolgu (Gezegen/Enerji Görünümü)
+    let grad = ctx.createRadialGradient(b.x, b.y, 2, b.x, b.y, b.r);
+    grad.addColorStop(0, "#fff");      // Merkez beyaz parlama
+    grad.addColorStop(0.3, "#00f2ff"); // Enerji rengi
+    grad.addColorStop(1, "transparent"); 
+    
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Enerji Halkası
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawDragon(d) {
+    const t = Date.now() * 0.005;
+    const s = Math.sin(t * 6) * 5;
+    ctx.save(); ctx.translate(d.x, d.y);
+    for (let side of [-1, 1]) {
+        ctx.save(); ctx.scale(side, 1); ctx.rotate(Math.sin(t * 10) * 0.3);
+        ctx.fillStyle = dragonColor; ctx.globalAlpha = 0.5;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(50, -65, 120, -25, 30, 40); ctx.fill();
+        ctx.restore();
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = dragonColor; ctx.beginPath(); ctx.ellipse(0, 10, 20, 45, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#000"; ctx.beginPath(); ctx.moveTo(-15, -25); ctx.lineTo(0, -65); ctx.lineTo(15, -25); ctx.fill();
+    ctx.fillStyle = "yellow"; ctx.beginPath(); ctx.arc(-7, -45, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7, -45, 4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+}
+
+function bind(id, k) {
+    const el = document.getElementById(id);
+    const start = (e) => { e.preventDefault(); keys[k] = true; playSound(220 + (Object.keys(keys).indexOf(k)*50)); };
+    const end = (e) => { e.preventDefault(); keys[k] = false; };
+    el.addEventListener('touchstart', start, {passive:false}); el.addEventListener('touchend', end, {passive:false});
+    el.addEventListener('mousedown', start); el.addEventListener('mouseup', end);
+}
+bind('l', 'left'); bind('r', 'right'); bind('u', 'up'); bind('d', 'down');
+
+function openShop() {
+    document.getElementById("overlay").style.display = "none";
+    const grid = document.getElementById("colorGrid"); grid.innerHTML = "";
+    colors.forEach(color => {
+        const b = document.createElement("button"); b.className = "color-btn";
+        b.style.backgroundColor = color.c; b.innerText = color.n;
+        b.onclick = () => {
+            if (gold >= 200) { gold -= 200; dragonColor = color.c; document.getElementById("goldCount").innerText = gold; playSound(880, 'sine'); }
+            else alert("Yetersiz Altın!");
+        };
+        grid.appendChild(b);
+    });
+    document.getElementById("shop-overlay").style.display = "flex";
+}
+function closeShop() { document.getElementById("shop-overlay").style.display = "none"; document.getElementById("overlay").style.display = "flex"; }
+
+function resetGame() {
+    document.getElementById("overlay").style.display = "none";
+    dragon = { x: canvas.width/2, y: canvas.height-200 };
+    balls = []; score = 0; speed = 4.5;
+    document.getElementById("scoreCount").innerText = "0";
+    playing = true; requestAnimationFrame(loop);
+}
+
+function loop() {
+    if(!playing) return;
+    ctx.fillStyle = "#000"; ctx.fillRect(0,0,canvas.width, canvas.height);
+    if(keys.left) dragon.x -= 9; if(keys.right) dragon.x += 9; if(keys.up) dragon.y -= 9; if(keys.down) dragon.y += 9;
+    dragon.x = Math.max(35, Math.min(canvas.width-35, dragon.x));
+    dragon.y = Math.max(60, Math.min(canvas.height-180, dragon.y));
+    drawDragon(dragon);
+
+    if(Math.random() < 0.05) balls.push({x: Math.random()*canvas.width, y:-40, r: 18, v: speed + Math.random()*2.5});
+
+    for(let i=balls.length-1; i>=0; i--) {
+        let b = balls[i]; b.y += b.v;
+        drawEnergyBall(b); // Yeni Güzel Toplar
+        
+        if(Math.hypot(dragon.x-b.x, dragon.y-b.y) < 45) {
+            playing = false;
+            document.getElementById("statusTitle").innerText = "EYVAH!";
+            document.getElementById("statusDesc").innerText = "Skorun: " + score;
+            document.getElementById("overlay").style.display = "flex";
+        }
+        if(b.y > canvas.height) { 
+            balls.splice(i,1); score += 10; gold += 2;
+            document.getElementById("scoreCount").innerText = score;
+            document.getElementById("goldCount").innerText = gold;
+            if(score >= 1000) {
+                playing = false; gold += 50;
+                document.getElementById("statusTitle").innerText = "Tebrikler !";
+                document.getElementById("statusDesc").innerHTML = "<b>Oğuzun Oynunu Oynadığınız İçin Teşekkürler !</b>";
+                document.getElementById("overlay").style.display = "flex";
+            }
+        }
+    }
+    requestAnimationFrame(loop);
+}
+window.onload = () => { document.getElementById("overlay").style.display = "flex"; };
+</script>
+</body>
+</html>
