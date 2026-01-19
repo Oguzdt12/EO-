@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Araba Yarışı</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #222; font-family: Arial; }
+        #gameCanvas { width: 100vw; height: 100vh; display: block; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; text-shadow: 2px 2px black; }
+    </style>
+</head>
+<body>
+    <div id="ui">Skor: <span id="score">0</span></div>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let score = 0;
+        let carX = canvas.width / 2;
+        let obstacles = [];
+
+        function drawCar() {
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(carX - 25, canvas.height - 100, 50, 80); // Kırmızı Araba
+        }
+
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Yol çizgileri
+            ctx.fillStyle = '#555';
+            ctx.fillRect(canvas.width/4, 0, canvas.width/2, canvas.height);
+            
+            drawCar();
+            
+            if (Math.random() < 0.05) {
+                obstacles.push({x: Math.random() * (canvas.width/2) + canvas.width/4, y: -50});
+            }
+
+            obstacles.forEach((obs, index) => {
+                obs.y += 5;
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(obs.x - 20, obs.y, 40, 40);
+                
+                if (obs.y > canvas.height) {
+                    obstacles.splice(index, 1);
+                    score++;
+                    document.getElementById('score').innerText = score;
+                }
+            });
+
+            requestAnimationFrame(update);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' && carX > canvas.width/4 + 25) carX -= 20;
+            if (e.key === 'ArrowRight' && carX < canvas.width*3/4 - 25) carX += 20;
+        });
+
+        update();
+    </script>
+</body>
+</html>
